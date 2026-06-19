@@ -57,5 +57,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     inputs: [text],
   })
 
-  return result.data[0].embedding
+  const embedding = result.data?.[0]?.embedding
+
+  if (!embedding) {
+    throw new Error('Embedding non généré par Mistral')
+  }
+
+  return embedding
 }
