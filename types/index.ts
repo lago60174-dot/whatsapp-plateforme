@@ -1,16 +1,15 @@
 // ============================================================
 // TYPES PRINCIPAUX DU PROJET
-// Ce fichier définit la "forme" de chaque objet dans l'app
 // ============================================================
 
 // Une entreprise cliente
 export type Company = {
   id: string
   name: string
-  phone_number_id: string        // L'ID Meta du numéro WhatsApp Business
-  whatsapp_access_token: string  // Le token d'accès Meta (stocké chiffré)
+  phone_number_id: string
+  whatsapp_access_token: string
   status: 'active' | 'suspended'
-  system_prompt: string          // Les instructions données à l'IA pour cette entreprise
+  system_prompt: string
   subscription_expires_at: string | null
   monthly_message_count: number
   created_at: string
@@ -25,27 +24,17 @@ export type Document = {
   created_at: string
 }
 
-// Un chunk de document (fragment de texte avec embedding)
+// Chunk de document (RAG)
 export type DocumentChunk = {
   id: string
   document_id: string
   company_id: string
-  content: string       // Le texte du fragment
+  content: string
   chunk_index: number
-  embedding: number[]   // Le vecteur (768 dimensions)
+  embedding: number[]
 }
 
-// Une conversation entre un client et le bot
-export type Conversation = {
-  id: string
-  company_id: string
-  customer_phone: string
-  created_at: string
-  updated_at: string
-  messages?: Message[]
-}
-
-// Un message dans une conversation
+// Message d'une conversation
 export type Message = {
   id: string
   conversation_id: string
@@ -54,7 +43,23 @@ export type Message = {
   created_at: string
 }
 
-// La structure d'un webhook envoyé par Meta WhatsApp
+// Conversation WhatsApp (✔ FIX IMPORTANT ICI)
+export type Conversation = {
+  id: string
+  company_id: string
+  customer_phone: string
+  created_at: string
+  updated_at: string
+
+  // 🔥 FIX: ajouté pour correspondre à Supabase join
+  companies?: {
+    name: string
+  }
+
+  messages?: Message[]
+}
+
+// Webhook WhatsApp Meta
 export type WhatsAppWebhookPayload = {
   object: string
   entry: Array<{
@@ -64,16 +69,18 @@ export type WhatsAppWebhookPayload = {
         messaging_product: string
         metadata: {
           display_phone_number: string
-          phone_number_id: string  // C'est ça qu'on utilise pour identifier l'entreprise
+          phone_number_id: string
         }
         messages?: Array<{
           id: string
-          from: string             // Numéro du client qui envoie le message
+          from: string
           timestamp: string
           type: string
-          text?: { body: string }
+          text?: {
+            body: string
+          }
         }>
-        statuses?: Array<{         // Notifications de statut (delivered, read) — à ignorer
+        statuses?: Array<{
           id: string
           status: string
         }>
