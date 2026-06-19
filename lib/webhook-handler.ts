@@ -1,6 +1,5 @@
 // ============================================================
 // WEBHOOK HANDLER — Orchestrateur principal
-// Identique à avant mais utilise Mistral au lieu de Gemini
 // ============================================================
 
 import { supabase } from './supabase'
@@ -34,25 +33,30 @@ export async function handleWhatsAppMessage(
             .single()
 
           if (companyError || !company) {
-            console.error(`No company found for phone_number_id: ${phoneNumberId}`)
+            console.error(
+              `No company found for phone_number_id: ${phoneNumberId}`
+            )
             continue
           }
 
-          // ── Étape 2 : Vérifier le statut ──
+          // ── Étape 2 : Vérifier statut ──
           if (company.status === 'suspended') {
-            console.log(`Company ${company.name} is suspended, skipping`)
+            console.log(
+              `Company ${company.name} is suspended, skipping`
+            )
             continue
           }
 
-          // ── Étape 3 : Indicateur "en train d'écrire..." ──
+          // ── Étape 3 : Typing indicator ──
           await sendTypingIndicator(
             company.phone_number_id,
             company.whatsapp_access_token,
             message.id
           )
 
-          // ── Étape 4 : Trouver ou créer la conversation ──
-          let conversation
+          // ── Étape 4 : Conversation (SAFE FIX ICI) ──
+          let conversationId: string
+
           const { data: existingConv } = await supabase
             .from('conversations')
             .select('id')
@@ -60,29 +64,39 @@ export async function handleWhatsAppMessage(
             .eq('customer_phone', customerPhone)
             .single()
 
-          if (existingConv) {
-            conversation = existingConv
+          if (existingConv?.id) {
+            conversationId = existingConv.id
           } else {
-            const { data: newConv } = await supabase
-              .from('conversations')
-              .insert({ company_id: company.id, customer_phone: customerPhone })
-              .select('id')
-              .single()
-            conversation = newConv
+            const { data: newConv, error: createError } =
+              await supabase
+                .from('conversations')
+                .insert({
+                  company_id: company.id,
+                  customer_phone: customerPhone,
+                })
+                .select('id')
+                .single()
+
+            if (createError || !newConv?.id) {
+              console.error('Error creating conversation', createError)
+              continue
+            }
+
+            conversationId = newConv.id
           }
 
-          // ── Étape 5 : Sauvegarder le message utilisateur ──
+          // ── Étape 5 : Sauvegarder message user ──
           await supabase.from('messages').insert({
-            conversation_id: conversation.id,
+            conversation_id: conversationId,
             role: 'user',
             content: userMessage,
           })
 
-          // ── Étape 6 : Historique récent (10 derniers messages) ──
+          // ── Étape 6 : Historique ──
           const { data: recentMessages } = await supabase
             .from('messages')
             .select('role, content')
-            .eq('conversation_id', conversation.id)
+            .eq('conversation_id', conversationId)
             .order('created_at', { ascending: false })
             .limit(10)
 
@@ -94,10 +108,13 @@ export async function handleWhatsAppMessage(
               content: msg.content,
             }))
 
-          // ── Étape 7 : Recherche RAG ──
-          const ragContext = await searchRelevantChunks(company.id, userMessage)
+          // ── Étape 7 : RAG ──
+          const ragContext = await searchRelevantChunks(
+            company.id,
+            userMessage
+          )
 
-          // ── Étape 8 : Générer la réponse avec Mistral ──
+          // ── Étape 8 : IA Mistral ──
           const aiResponse = await generateResponse(
             company.system_prompt,
             ragContext,
@@ -105,7 +122,7 @@ export async function handleWhatsAppMessage(
             userMessage
           )
 
-          // ── Étape 9 : Envoyer la réponse WhatsApp ──
+          // ── Étape 9 : WhatsApp response ──
           await sendWhatsAppMessage(
             company.phone_number_id,
             company.whatsapp_access_token,
@@ -113,21 +130,26 @@ export async function handleWhatsAppMessage(
             aiResponse
           )
 
-          // ── Étape 10 : Sauvegarder la réponse ──
+          // ── Étape 10 : Save assistant message ──
           await supabase.from('messages').insert({
-            conversation_id: conversation.id,
+            conversation_id: conversationId,
             role: 'assistant',
             content: aiResponse,
           })
 
-          // ── Étape 11 : Incrémenter le compteur ──
+          // ── Étape 11 : compteur ──
           await supabase
             .from('companies')
-            .update({ monthly_message_count: company.monthly_message_count + 1 })
+            .update({
+              monthly_message_count:
+                company.monthly_message_count + 1,
+            })
             .eq('id', company.id)
-
         } catch (error) {
-          console.error(`Error processing message for ${phoneNumberId}:`, error)
+          console.error(
+            `Error processing message for ${phoneNumberId}:`,
+            error
+          )
         }
       }
     }
